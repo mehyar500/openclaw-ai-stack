@@ -1,17 +1,18 @@
 # openclaw-ai-stack
 
-Custom OpenClaw deployment stack for VPS use.
+Custom OpenClaw VPS deployment stack.
 
 ## What this repo contains
 
 - A custom **OpenClaw** image based on `ghcr.io/openclaw/openclaw:latest`
 - Bundled runtime tools for AI-agent operations:
   - **Chromium**
-  - **Ollama**
+  - **Ollama runtime**
   - **psql** client
   - common ops/debug tools (`curl`, `jq`, `git`, etc.)
 - A **Docker Compose** deployment layout
 - A separate **Postgres + pgvector** service for structured + vector workloads
+- A staged VPS deployment script that avoids flipping critical OpenClaw config too early
 
 ## Why Postgres stays separate
 
@@ -26,7 +27,7 @@ That is possible, but it is the wrong ops shape:
 
 Instead:
 
-- **OpenClaw container** = gateway/runtime + browser/tooling + optional Ollama runtime
+- **OpenClaw container** = gateway/runtime + browser/tooling + Ollama runtime
 - **Postgres container** = stateful database with `pgvector`
 
 ## Services
@@ -35,36 +36,37 @@ Instead:
 Custom image that includes:
 - OpenClaw runtime
 - Chromium
-- Ollama binary/runtime
+- Ollama runtime
 - PostgreSQL client
 
 ### `postgres`
 - `pgvector/pgvector:pg16`
-- local persistent volume
+- persistent volume
 - `vector` extension bootstrapped automatically
 
 ## Files
 
-- `Dockerfile` - custom OpenClaw image
-- `docker-compose.yml` - deployment stack
-- `.env.example` - environment template
-- `scripts/entrypoint.sh` - container bootstrap logic
-- `compose/init/01-pgvector.sql` - pgvector bootstrap
+- `Dockerfile` — custom OpenClaw image
+- `docker-compose.yml` — deployment stack
+- `.env.example` — environment template
+- `scripts/entrypoint.sh` — container bootstrap logic
+- `scripts/deploy-vps.sh` — staged VPS deploy helper
+- `compose/init/01-pgvector.sql` — pgvector bootstrap
+- `DEPLOYMENT.md` — rollout and rollback guide
 
-## Design notes
+## Important safety rule
 
-- Ollama is available **inside the OpenClaw container** at `http://127.0.0.1:11434`
-- Postgres is a sibling container on the same compose network
-- OpenClaw state is mounted at `/home/node/.openclaw`
-- Secrets should be supplied via `.env`, not committed
+This repo is designed so that you can deploy the image and the database stack **before** teaching OpenClaw to depend on Ollama for embeddings.
+
+That avoids the exact failure mode where the live gateway is restarted into a broken provider configuration.
 
 ## Build
 
 ```bash
-docker build -t mehyar-us/openclaw-ai:latest .
+docker build -t mehyar500/openclaw-ai:latest .
 ```
 
-## Run
+## Run locally / on a VPS
 
 ```bash
 cp .env.example .env
@@ -73,7 +75,18 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+## Deploy on your VPS
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+Short version:
+
+```bash
+./scripts/deploy-vps.sh
+```
+
 ## Notes
 
-- If you want OpenClaw to use Ollama-backed embeddings, wire that in carefully after the stack is healthy.
+- Ollama runs **inside** the OpenClaw container in this design.
+- Postgres remains a sibling container.
 - Do not commit real API keys or passwords into this repo.
